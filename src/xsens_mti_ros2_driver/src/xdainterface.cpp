@@ -226,84 +226,63 @@ void XdaInterface::registerPublishers()
 }
 
 bool XdaInterface::connectDevice()
-{
-	XsPortInfo mtPort;
-	XsBaudRate baudrate = XBR_Invalid;
+{  XsPortInfo mtPort;
+  XsBaudRate baudrate = XBR_Invalid;
 
-	// Check if scanning is enabled
-	bool scan_for_devices = false;
-	m_node->get_parameter("scan_for_devices", scan_for_devices);
+  // Check if scanning is enabled
+  bool scan_for_devices = false;
+  m_node->get_parameter("scan_for_devices", scan_for_devices);
 
-	// Read device ID parameter
-	bool checkDeviceID = false;
-	std::string deviceId = "";
-	if(m_node->get_parameter("device_id", deviceId))
-	{
+  // Read device ID parameter
+  bool checkDeviceID = false;
+  std::string deviceId = "";
+  if (m_node->get_parameter("device_id", deviceId)) {
+    // If device_id is not empty, set checkDeviceID = true
+    if (!deviceId.empty()) {
+      RCLCPP_INFO(m_node->get_logger(), "Found device ID parameter: %s.", deviceId.c_str());
+      checkDeviceID = true;
+    }
+  }
 
-		//if device_id is not empty, set checkDeviceID = true;
-		if (!deviceId.empty())
-		{
-			RCLCPP_INFO(m_node->get_logger(), "Found device ID parameter: %s.", deviceId.c_str());
-			checkDeviceID = true;
-		}
+  // Hardcode the port name
+  std::string portName = "/dev/ttyUSB0";
+  RCLCPP_INFO(m_node->get_logger(), "Using hardcoded port name: %s", portName.c_str());
+  baudrate = XsBaud::numericToRate(115200);  // Assuming baud rate is 115200
+  mtPort = XsPortInfo(portName, baudrate);
+  RCLCPP_INFO(m_node->get_logger(), "Scanning port %s ...", portName.c_str());
+  if (!XsScanner::scanPort(mtPort, baudrate)) {
+    return handleError("No MTi device found. Verify port and baudrate.");
+  }
 
-	}
+  // If you have the device ID, you can hardcode it here
+  // std::string deviceId = "YOUR_DEVICE_ID";
 
-	
-	if (!scan_for_devices)
-	{
-		// Read baudrate parameter if set
-		int baudrateParam = 0;
-        if (m_node->get_parameter("baudrate", baudrateParam))
-        {
-            RCLCPP_INFO(m_node->get_logger(), "Baudrate parameter: %d", baudrateParam);
-			baudrate = XsBaud::numericToRate(baudrateParam);
-        }
+  // If you don't have the device ID, skip the device ID check
+  RCLCPP_INFO(m_node->get_logger(), "Skipping device ID check...");
 
-		// Read port parameter if set
-		std::string portName;
-		if(m_node->get_parameter("port", portName))
-		{
-			RCLCPP_INFO(m_node->get_logger(), "Port name parameter: %s", portName.c_str());
-			mtPort = XsPortInfo(portName, baudrate);
-			RCLCPP_INFO(m_node->get_logger(), "Scanning port %s ...", portName.c_str());
-			if (!XsScanner::scanPort(mtPort, baudrate))
-				return handleError("No MTi device found. Verify port and baudrate.");
-		
-		}
+  // If you want to include the device ID check, uncomment the following lines
+  /*
+  if (checkDeviceID)
+  {
+      if (mtPort.deviceId().toString().c_str() != deviceId)
+      {
+          return handleError("Device ID does not match. Verify device ID.");
+      }
+  }
+  */
 
+  // If scanning is enabled, scan for devices
+  if (scan_for_devices) {
+    RCLCPP_INFO(m_node->get_logger(), "Scanning for devices...");
+    XsPortInfoArray portInfoArray = XsScanner::scanPorts(baudrate);
 
-	}
-	else
-	{
-		RCLCPP_INFO(m_node->get_logger(), "Scanning for devices...");
-		XsPortInfoArray portInfoArray = XsScanner::scanPorts(baudrate);
-
-		for (auto const &portInfo : portInfoArray)
-		{
-			if (portInfo.deviceId().isMti() || portInfo.deviceId().isMtig())
-			{
-				if (checkDeviceID)
-				{
-					if (portInfo.deviceId().toString().c_str() == deviceId)
-					{
-						mtPort = portInfo;
-						break;
-					}
-				}
-				else
-				{
-					mtPort = portInfo;
-					break;
-				}
-			}
-		}
-	}
-
-
-	//If the device ID doesn't match the ID, throw error and exit program.
-	if (checkDeviceID && mtPort.deviceId().toString().c_str() != deviceId)
-	    return handleError("No MTi device found with matching device ID.");
+    for (auto const &portInfo : portInfoArray) {
+      if (portInfo.deviceId().isMti() || portInfo.deviceId().isMtig()) {
+        mtPort = portInfo;
+        break;
+      }
+    }
+  }
 
 	if (mtPort.empty())
 		return handleError("No MTi device found.");
